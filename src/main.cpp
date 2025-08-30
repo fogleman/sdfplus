@@ -1,7 +1,9 @@
 #include "sdf.h"
 
 int main(int argc, char **argv) {
-    const real r = 200;
+    RTCDevice device = rtcNewDevice(NULL);
+
+    const real r = 320;
 
     SDF3 f = Sphere(r);
     f &= Box(vec3(r * 0.75));
@@ -10,10 +12,16 @@ int main(int argc, char **argv) {
     f -= Rotate(Cylinder(r / 2), M_PI / 2, Z);
     f &= Plane(Z);
 
+    f = Mesh(device, argv[1]);
+    f &= Plane(Y);
+
     std::vector<vec3> points;
     std::mutex mutex;
 
     const auto worker = [&](const int wi, const int wn) {
+        _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
+        _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
+
         std::vector<vec3> workerPoints;
         const int h = r + 1;
         const real kHalfDiag = 0.8660254037844386;

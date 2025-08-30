@@ -9,6 +9,7 @@
 
 #include <boost/asio/thread_pool.hpp>
 #include <boost/asio/post.hpp>
+#include <boost/functional/hash.hpp>
 #include <boost/interprocess/file_mapping.hpp>
 #include <boost/interprocess/mapped_region.hpp>
 
@@ -18,10 +19,14 @@
 // #include <glm/gtc/constants.hpp>
 // #include <glm/gtc/matrix_transform.hpp>
 // #include <glm/gtx/component_wise.hpp>
-// #include <glm/gtx/hash.hpp>
+#include <glm/gtx/hash.hpp>
 // #include <glm/gtx/norm.hpp>
 #include <glm/gtx/normal.hpp>
 // #include <glm/gtx/string_cast.hpp>
+
+#include <embree4/rtcore.h>
+#include <pmmintrin.h>
+#include <xmmintrin.h>
 
 #define DOUBLE_PRECISION
 
@@ -55,3 +60,4 @@ const vec3 Z(0, 0, 1);
 #include "stl.h"
 #include "marching.h"
 #include "sdf3.h"
+#include "embree.h"
