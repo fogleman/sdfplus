@@ -11,8 +11,7 @@ typedef struct {
 std::pair<vec3, vec3> closestPointTriangle(
     const vec3 &p,
     const vec3 &a, const vec3 &b, const vec3 &c,
-    const vec3 &na, const vec3 &nb, const vec3 &nc,
-    const vec3 &nab, const vec3 &nac, const vec3 &nbc)
+    const vec3 &na, const vec3 &nb, const vec3 &nc)
 {
     const vec3 ab = b - a;
     const vec3 ac = c - a;
@@ -41,19 +40,19 @@ std::pair<vec3, vec3> closestPointTriangle(
     const real vc = d1 * d4 - d3 * d2;
     if (vc <= 0 && d1 >= 0 && d3 <= 0) {
         const real v = d1 / (d1 - d3);
-        return std::make_pair(a + v * ab, nab);
+        return std::make_pair(a + v * ab, glm::normalize(na + nb));
     }
 
     const real vb = d5 * d2 - d1 * d6;
     if (vb <= 0 && d2 >= 0 && d6 <= 0) {
         const real v = d2 / (d2 - d6);
-        return std::make_pair(a + v * ac, nac);
+        return std::make_pair(a + v * ac, glm::normalize(na + nc));
     }
 
     const real va = d3 * d6 - d5 * d4;
     if (va <= 0 && (d4 - d3) >= 0 && (d5 - d6) >= 0) {
         const real v = (d4 - d3) / ((d4 - d3) + (d5 - d6));
-        return std::make_pair(b + v * (c - b), nbc);
+        return std::make_pair(b + v * (c - b), glm::normalize(nb + nc));
     }
 
     const real denom = 1 / (va + vb + vc);
@@ -75,7 +74,6 @@ struct ClosestPointResult {
     EmbreeVertex *vertexBuf;
     EmbreeTriangle *triangleBuf;
     EmbreeVertex *normalBuf;
-    EmbreeVertex *edgeNormalBuf;
 };
 
 SDF3 Mesh(const RTCDevice device, const std::string &path) {
@@ -98,12 +96,17 @@ SDF3 Mesh(const RTCDevice device, const std::string &path) {
         const int i0 = lookup[data[i + 0]];
         const int i1 = lookup[data[i + 1]];
         const int i2 = lookup[data[i + 2]];
+
+        const vec3 n = glm::triangleNormal(positions[i0], positions[i1], positions[i2]);
+        if (std::isnan(n.x)) {
+            continue;
+        }
+
         triangles.emplace_back(i0, i1, i2);
     }
 
     // compute angle-weighted pseudonormals
     std::vector<vec3> normals(positions.size(), vec3{0});
-    std::unordered_map<std::pair<int, int>, vec3, boost::hash<std::pair<int, int>>> edgeNormalsMap;
     for (const ivec3 &t : triangles) {
         const vec3 &a = positions[t.x];
         const vec3 &b = positions[t.y];
@@ -118,19 +121,9 @@ SDF3 Mesh(const RTCDevice device, const std::string &path) {
         normals[t.x] += n * thetaA;
         normals[t.y] += n * thetaB;
         normals[t.z] += n * thetaC;
-        edgeNormalsMap[std::make_pair(std::min(t.x, t.y), std::max(t.x, t.y))] += n;
-        edgeNormalsMap[std::make_pair(std::min(t.x, t.z), std::max(t.x, t.z))] += n;
-        edgeNormalsMap[std::make_pair(std::min(t.y, t.z), std::max(t.y, t.z))] += n;
     }
     for (int i = 0; i < normals.size(); i++) {
         normals[i] = glm::normalize(normals[i]);
-    }
-    std::vector<vec3> edgeNormals(triangles.size() * 3, vec3{0});
-    for (int i = 0; i < triangles.size(); i++) {
-        const ivec3 &t = triangles[i];
-        edgeNormals[i*3+0] = glm::normalize(edgeNormalsMap[std::make_pair(std::min(t.x, t.y), std::max(t.x, t.y))]);
-        edgeNormals[i*3+1] = glm::normalize(edgeNormalsMap[std::make_pair(std::min(t.x, t.z), std::max(t.x, t.z))]);
-        edgeNormals[i*3+2] = glm::normalize(edgeNormalsMap[std::make_pair(std::min(t.y, t.z), std::max(t.y, t.z))]);
     }
 
     RTCScene scene = rtcNewScene(device);
@@ -143,9 +136,9 @@ SDF3 Mesh(const RTCDevice device, const std::string &path) {
         sizeof(EmbreeVertex), positions.size());
     for (int i = 0; i < positions.size(); i++) {
         const auto &p = positions[i];
-        vertexBuf[i].x = (p.x - 0) * 10;
-        vertexBuf[i].y = (p.y - 0) * 10;
-        vertexBuf[i].z = (p.z - 24) * 10;
+        vertexBuf[i].x = (p.x - 0) * 20;
+        vertexBuf[i].y = (p.y - 0) * 20;
+        vertexBuf[i].z = (p.z - 25.5) * 20;
     }
 
     EmbreeTriangle *triangleBuf = (EmbreeTriangle *)rtcSetNewGeometryBuffer(
@@ -166,14 +159,6 @@ SDF3 Mesh(const RTCDevice device, const std::string &path) {
         normalBuf[i].z = n.z;
     }
 
-    EmbreeVertex *edgeNormalBuf = (EmbreeVertex *)malloc(sizeof(EmbreeVertex) * edgeNormals.size());
-    for (int i = 0; i < edgeNormals.size(); i++) {
-        const auto &n = edgeNormals[i];
-        edgeNormalBuf[i].x = n.x;
-        edgeNormalBuf[i].y = n.y;
-        edgeNormalBuf[i].z = n.z;
-    }
-
     const RTCPointQueryFunction closestPointFunc = [](RTCPointQueryFunctionArguments *args) -> bool {
         ClosestPointResult *result = (ClosestPointResult *)args->userPtr;
         const EmbreeTriangle &triangle = result->triangleBuf[args->primID];
@@ -183,9 +168,6 @@ SDF3 Mesh(const RTCDevice device, const std::string &path) {
         const EmbreeVertex &n0 = result->normalBuf[triangle.v0];
         const EmbreeVertex &n1 = result->normalBuf[triangle.v1];
         const EmbreeVertex &n2 = result->normalBuf[triangle.v2];
-        const EmbreeVertex &n01 = result->edgeNormalBuf[args->primID * 3 + 0];
-        const EmbreeVertex &n02 = result->edgeNormalBuf[args->primID * 3 + 1];
-        const EmbreeVertex &n12 = result->edgeNormalBuf[args->primID * 3 + 2];
         // TODO: silly copies
         const vec3 a(v0.x, v0.y, v0.z);
         const vec3 b(v1.x, v1.y, v1.z);
@@ -193,11 +175,8 @@ SDF3 Mesh(const RTCDevice device, const std::string &path) {
         const vec3 na(n0.x, n0.y, n0.z);
         const vec3 nb(n1.x, n1.y, n1.z);
         const vec3 nc(n2.x, n2.y, n2.z);
-        const vec3 nab(n01.x, n01.y, n01.z);
-        const vec3 nac(n02.x, n02.y, n02.z);
-        const vec3 nbc(n12.x, n12.y, n12.z);
         const vec3 q(args->query->x, args->query->y, args->query->z);
-        const auto closest = closestPointTriangle(q, a, b, c, na, nb, nc, nab, nac, nbc);
+        const auto closest = closestPointTriangle(q, a, b, c, na, nb, nc);
         const vec3 p = closest.first;
         const vec3 n = closest.second;
         const real d = glm::distance(p, q);
@@ -234,7 +213,6 @@ SDF3 Mesh(const RTCDevice device, const std::string &path) {
         result.vertexBuf = vertexBuf;
         result.triangleBuf = triangleBuf;
         result.normalBuf = normalBuf;
-        result.edgeNormalBuf = edgeNormalBuf;
         RTCPointQueryContext context;
         rtcInitPointQueryContext(&context);
         rtcPointQuery(scene, &query, &context, nullptr, (void *)&result);

@@ -300,7 +300,7 @@ const std::array<std::vector<int>, 256> triangleTable = {{
     {},
 }};
 
-void MarchingCubes(
+int MarchingCubes(
     const std::array<vec3, 8> &p,
     const std::array<real, 8> &v,
     const real x,
@@ -313,7 +313,7 @@ void MarchingCubes(
         }
     }
     if (edgeTable[mask] == 0) {
-        return;
+        return 0;
     }
     std::array<vec3, 12> points;
     for (int i = 0; i < 12; i++) {
@@ -328,4 +328,5 @@ void MarchingCubes(
     for (const int i : triangleTable[mask]) {
         out.push_back(points[i]);
     }
+    return triangleTable[mask].size() / 3;
 }
